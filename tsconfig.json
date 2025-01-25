@@ -16,7 +16,7 @@
       "~/*": ["./app/*"]
     },
     "skipLibCheck": true,
-    "types": ["node", "jest", "@testing-library/jest-dom"],
+    "types": ["@testing-library/jest-dom", "jest"],
     "noEmit": true
   }
 }

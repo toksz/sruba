@@ -221,6 +221,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.0
         version: 4.0.0
+      remix:
+        specifier: ^2.15.2
+        version: 2.15.2
       remix-island:
         specifier: ^0.2.0
         version: 0.2.0(@remix-run/react@2.15.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.7.2))(@remix-run/server-runtime@2.15.0(typescript@5.7.2))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -5989,6 +5992,10 @@ packages:
         optional: true
       zod:
         optional: true
+
+  remix@2.15.2:
+    resolution: {integrity: sha512-fAawjmgChEWfDbXFizBJvrt2hcP5IiwMmJCbwhtE1IzYOYL9irSBkgX6Ck0wrtPmGz7o0t4bY4GWD+Z+B/9t2Q==}
+    engines: {node: '>=18.0.0'}
 
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
@@ -14132,6 +14139,8 @@ snapshots:
       '@remix-run/router': 1.21.0
       react: 18.3.1
       zod: 3.23.8
+
+  remix@2.15.2: {}
 
   require-directory@2.1.1: {}
 
