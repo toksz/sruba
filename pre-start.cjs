@@ -1,26 +1,63 @@
-const { execSync } =require('child_process');
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// Check if node_modules exists
+const checkDependencies = () => {
+  const nodeModulesPath = path.join(__dirname, 'node_modules');
+  if (!fs.existsSync(nodeModulesPath)) {
+    console.log('\n⚠️  node_modules not found. Installing dependencies...');
+    try {
+      execSync('pnpm install', { stdio: 'inherit' });
+      console.log('✅ Dependencies installed successfully!\n');
+    } catch (error) {
+      console.error('❌ Failed to install dependencies. Please run "pnpm install" manually.');
+      process.exit(1);
+    }
+  }
+};
 
 // Get git hash with fallback
 const getGitHash = () => {
   try {
     return execSync('git rev-parse --short HEAD').toString().trim();
   } catch {
-    return 'no-git-info';
+    return 'development';
   }
 };
 
-let commitJson = {
-  hash: JSON.stringify(getGitHash()),
-  version: JSON.stringify(process.env.npm_package_version),
+// Get package version with fallback
+const getPackageVersion = () => {
+  try {
+    const packageJson = require('./package.json');
+    return packageJson.version || '0.0.1';
+  } catch {
+    return '0.0.1';
+  }
 };
 
-console.log(`
+// Main execution
+try {
+  // Run pre-start checks
+  checkDependencies();
+
+  const commitInfo = {
+    hash: getGitHash(),
+    version: getPackageVersion(),
+  };
+
+  console.log(`
 ★═══════════════════════════════════════★
-          B O L T . D I Y
-         ⚡️  Welcome  ⚡️
+          S R U B A
+         🔧  Welcome  🔧
 ★═══════════════════════════════════════★
 `);
-console.log('📍 Current Version Tag:', `v${commitJson.version}`);
-console.log('📍 Current Commit Version:', commitJson.hash);
-console.log('  Please wait until the URL appears here');
-console.log('★═══════════════════════════════════════★');
+  console.log('📍 Current Version:', `v${commitInfo.version}`);
+  console.log('📍 Git Commit:', commitInfo.hash);
+  console.log('  Starting development server...');
+  console.log('★═══════════════════════════════════════★\n');
+
+} catch (error) {
+  console.error('❌ Error during startup:', error.message);
+  process.exit(1);
+}
