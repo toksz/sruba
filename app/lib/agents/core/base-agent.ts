@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events';
 import { 
   AgentRole, 
   AgentCapability, 
@@ -10,6 +9,7 @@ import {
   CollaborationEvent,
   StateChangeEvent
 } from './types';
+import { EventBus } from './events';
 
 // Helper function for generating UUIDs
 function generateUUID(): string {
@@ -20,13 +20,14 @@ function generateUUID(): string {
   });
 }
 
-export abstract class BaseAgent extends EventEmitter {
+export abstract class BaseAgent {
   protected id: string;
   protected role: AgentRole;
   protected capabilities: AgentCapability[];
   protected context: AgentContext;
   protected currentTask?: AgentTask;
   protected isAvailable: boolean = true;
+  protected eventBus?: EventBus;
 
   constructor(
     id: string,
@@ -34,11 +35,20 @@ export abstract class BaseAgent extends EventEmitter {
     capabilities: AgentCapability[],
     initialContext: AgentContext
   ) {
-    super();
     this.id = id;
     this.role = role;
     this.capabilities = capabilities;
     this.context = initialContext;
+  }
+
+  setEventBus(eventBus: EventBus): void {
+    this.eventBus = eventBus;
+  }
+
+  protected async emitEvent(event: TaskEvent | CollaborationEvent | StateChangeEvent): Promise<void> {
+    if (this.eventBus) {
+      await this.eventBus.publish(event);
+    }
   }
 
   // Core methods all agents must implement
@@ -64,7 +74,7 @@ export abstract class BaseAgent extends EventEmitter {
       task,
       agentId: this.id
     };
-    this.emit(EventType.TASK_STARTED, taskStartedEvent);
+    await this.emitEvent(taskStartedEvent);
 
     try {
       const output = await this.executeTask(task);
@@ -79,7 +89,7 @@ export abstract class BaseAgent extends EventEmitter {
           task: { ...task, status: 'completed' },
           agentId: this.id
         };
-        this.emit(EventType.TASK_COMPLETED, taskCompletedEvent);
+        await this.emitEvent(taskCompletedEvent);
       } else {
         const taskFailedEvent: TaskEvent = {
           id: generateUUID(),
@@ -90,7 +100,7 @@ export abstract class BaseAgent extends EventEmitter {
           agentId: this.id,
           metadata: { error: 'Output validation failed' }
         };
-        this.emit(EventType.TASK_FAILED, taskFailedEvent);
+        await this.emitEvent(taskFailedEvent);
       }
 
       return isValid;
@@ -127,7 +137,7 @@ export abstract class BaseAgent extends EventEmitter {
       previousState: previousContext,
       newState: this.context
     };
-    this.emit(EventType.STATE_CHANGED, stateChangeEvent);
+    await this.emitEvent(stateChangeEvent);
   }
 
   // Capability checking
@@ -166,26 +176,32 @@ export abstract class BaseAgent extends EventEmitter {
       targetRole,
       context: this.context
     };
-    this.emit(EventType.COLLABORATION_REQUESTED, collaborationEvent);
+    await this.emitEvent(collaborationEvent);
   }
 
   // Cleanup method to handle agent shutdown
   async cleanup(): Promise<void> {
-    this.emit(EventType.STATE_CHANGED, {
+    await this.emitEvent({
+      id: generateUUID(),
       type: EventType.STATE_CHANGED,
+      timestamp: Date.now(),
+      source: this.id,
       entityId: this.id,
       entityType: 'agent',
-      state: 'cleaning_up'
+      previousState: this.context,
+      newState: { ...this.context, state: 'cleaning_up' }
     });
     
-    // Remove all listeners
-    this.removeAllListeners();
-    
-    this.emit(EventType.STATE_CHANGED, {
+    // Final cleanup event
+    await this.emitEvent({
+      id: generateUUID(),
       type: EventType.STATE_CHANGED,
+      timestamp: Date.now(),
+      source: this.id,
       entityId: this.id,
       entityType: 'agent',
-      state: 'cleaned_up'
+      previousState: { ...this.context, state: 'cleaning_up' },
+      newState: { ...this.context, state: 'cleaned_up' }
     });
   }
 }

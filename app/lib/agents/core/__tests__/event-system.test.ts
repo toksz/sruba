@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import fs from 'fs/promises';
 import { 
   EventType,
   TaskEvent,
@@ -11,6 +11,9 @@ import {
 } from '../types';
 import { BaseAgent } from '../base-agent';
 import { AgentManager } from '../agent-manager';
+import { ErrorLogger } from '../errors';
+import { EventBus } from '../events';
+import path from 'path';
 
 console.log('Starting test file execution');
 
@@ -37,6 +40,8 @@ describe('Event System', () => {
   
   let agent: TestAgent;
   let manager: AgentManager;
+  let errorLogger: ErrorLogger;
+  let eventBus: EventBus;
   const mockTask: AgentTask = {
     id: 'test-task-1',
     role: AgentRole.CODER,
@@ -48,8 +53,12 @@ describe('Event System', () => {
     status: 'pending'
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     console.log('Setting up test environment');
+    const testStorePath = path.join(__dirname, 'test-events');
+    errorLogger = new ErrorLogger();
+    eventBus = new EventBus(errorLogger, testStorePath);
+    await eventBus.initialize();
     const sharedKnowledge = new Map<string, unknown>();
     agent = new TestAgent(
       'test-agent-1',
@@ -66,64 +75,92 @@ describe('Event System', () => {
         sharedKnowledge
       }
     );
-    manager = new AgentManager();
+    manager = new AgentManager(errorLogger, testStorePath);
+    await manager.initialize();
     console.log('Test environment setup complete');
   });
 
+  afterEach(async () => {
+    try {
+      const testStorePath = path.join(__dirname, 'test-events');
+      await fs.rm(testStorePath, { recursive: true, force: true });
+    } catch (error) {
+      console.error('Error cleaning up test files:', error);
+    }
+  });
+
   describe('Task Events', () => {
-    it('should emit task started event when task is assigned', async () => {
+    it('should publish task started event when task is assigned', async () => {
       console.log('Starting task started event test');
-      const taskStartedPromise = new Promise<TaskEvent>(resolve => {
-        agent.once(EventType.TASK_STARTED, resolve);
+      let capturedEvent: TaskEvent | null = null;
+      const taskStartedPromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.TASK_STARTED, (event: TaskEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
       });
 
+      await manager.registerAgent(agent);
       await agent.assignTask(mockTask);
-      const event = await taskStartedPromise;
-      console.log('Received task started event:', event);
+      await taskStartedPromise;
 
-      expect(event.type).toBe(EventType.TASK_STARTED);
-      expect(event.task).toEqual(mockTask);
-      expect(event.agentId).toBe('test-agent-1');
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.TASK_STARTED);
+      expect(capturedEvent?.task).toEqual(mockTask);
+      expect(capturedEvent?.agentId).toBe('test-agent-1');
     });
 
-    it('should emit task completed event on successful execution', async () => {
+    it('should publish task completed event on successful execution', async () => {
       console.log('Starting task completed event test');
-      const taskCompletedPromise = new Promise<TaskEvent>(resolve => {
-        agent.once(EventType.TASK_COMPLETED, resolve);
+      let capturedEvent: TaskEvent | null = null;
+      const taskCompletedPromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.TASK_COMPLETED, (event: TaskEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
       });
 
+      await manager.registerAgent(agent);
       await agent.assignTask(mockTask);
-      const event = await taskCompletedPromise;
-      console.log('Received task completed event:', event);
+      await taskCompletedPromise;
 
-      expect(event.type).toBe(EventType.TASK_COMPLETED);
-      expect(event.task.status).toBe('completed');
-      expect(event.agentId).toBe('test-agent-1');
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.TASK_COMPLETED);
+      expect(capturedEvent?.task.status).toBe('completed');
+      expect(capturedEvent?.agentId).toBe('test-agent-1');
     });
   });
 
   describe('Agent Events', () => {
-    it('should emit agent registered event when agent is registered', () => {
+    it('should publish agent registered event when agent is registered', async () => {
       console.log('Starting agent registered event test');
-      const agentRegisteredPromise = new Promise<AgentEvent>(resolve => {
-        manager.once(EventType.AGENT_REGISTERED, resolve);
+      let capturedEvent: AgentEvent | null = null;
+      const agentRegisteredPromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.AGENT_REGISTERED, (event: AgentEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
       });
 
-      manager.registerAgent(agent);
-      
-      return expect(agentRegisteredPromise).resolves.toMatchObject({
-        type: EventType.AGENT_REGISTERED,
-        agentId: 'test-agent-1',
-        role: AgentRole.CODER
-      });
+      await manager.registerAgent(agent);
+      await agentRegisteredPromise;
+
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.AGENT_REGISTERED);
+      expect(capturedEvent?.agentId).toBe('test-agent-1');
+      expect(capturedEvent?.role).toBe(AgentRole.CODER);
     });
   });
 
   describe('State Change Events', () => {
-    it('should emit state change event when context is updated', () => {
+    it('should publish state change event when context is updated', async () => {
       console.log('Starting state change event test');
-      const stateChangePromise = new Promise<StateChangeEvent>(resolve => {
-        agent.once(EventType.STATE_CHANGED, resolve);
+      let capturedEvent: StateChangeEvent | null = null;
+      const stateChangePromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.STATE_CHANGED, (event: StateChangeEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
       });
 
       const update = {
@@ -134,19 +171,28 @@ describe('Event System', () => {
         }]
       };
 
+      await manager.registerAgent(agent);
       agent.updateContext(update);
+      await stateChangePromise;
 
-      return expect(stateChangePromise).resolves.toMatchObject({
-        type: EventType.STATE_CHANGED,
-        entityId: 'test-agent-1',
-        entityType: 'agent'
-      });
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.STATE_CHANGED);
+      expect(capturedEvent?.entityId).toBe('test-agent-1');
+      expect(capturedEvent?.entityType).toBe('agent');
     });
   });
 
   describe('Error Events', () => {
-    it('should emit error event when task processing fails', async () => {
+    it('should publish error event when task processing fails', async () => {
       console.log('Starting error event test');
+      let capturedEvent: TaskEvent | null = null;
+      const taskFailedPromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.TASK_FAILED, (event: TaskEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
+      });
+
       const sharedKnowledge = new Map<string, unknown>();
       const errorAgent = new class extends TestAgent {
         async executeTask() {
@@ -169,35 +215,35 @@ describe('Event System', () => {
         }
       );
 
-      const taskFailedPromise = new Promise<TaskEvent>(resolve => {
-        errorAgent.once(EventType.TASK_FAILED, resolve);
-      });
-
+      await manager.registerAgent(errorAgent);
       await errorAgent.assignTask(mockTask);
-      const event = await taskFailedPromise;
-      console.log('Received task failed event:', event);
+      await taskFailedPromise;
 
-      expect(event.type).toBe(EventType.TASK_FAILED);
-      expect(event.task.status).toBe('failed');
-      expect(event.metadata).toHaveProperty('error');
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.TASK_FAILED);
+      expect(capturedEvent?.task.status).toBe('failed');
+      expect(capturedEvent?.metadata).toHaveProperty('error');
     });
   });
 
   describe('Event Propagation', () => {
     it('should propagate events from agent to manager', async () => {
       console.log('Starting event propagation test');
-      const managerTaskStartedPromise = new Promise<TaskEvent>(resolve => {
-        manager.once(EventType.TASK_STARTED, resolve);
+      let capturedEvent: TaskEvent | null = null;
+      const managerTaskStartedPromise = new Promise<void>((resolve) => {
+        eventBus.subscribe(EventType.TASK_STARTED, (event: TaskEvent) => {
+          capturedEvent = event;
+          resolve();
+        });
       });
 
-      manager.registerAgent(agent);
+      await manager.registerAgent(agent);
       await agent.assignTask(mockTask);
-      
-      const event = await managerTaskStartedPromise;
-      console.log('Received propagated event:', event);
+      await managerTaskStartedPromise;
 
-      expect(event.type).toBe(EventType.TASK_STARTED);
-      expect(event.agentId).toBe('test-agent-1');
+      expect(capturedEvent).toBeTruthy();
+      expect(capturedEvent?.type).toBe(EventType.TASK_STARTED);
+      expect(capturedEvent?.agentId).toBe('test-agent-1');
     });
   });
 });

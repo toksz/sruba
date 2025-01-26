@@ -1,5 +1,6 @@
-import { EventEmitter } from 'events';
 import { BaseAgent } from './base-agent';
+import { EventBus } from './events';
+import { ErrorLogger } from './errors';
 import { 
   AgentRole, 
   AgentTask, 
@@ -21,43 +22,42 @@ function generateUUID(): string {
   });
 }
 
-export class AgentManager extends EventEmitter {
+export class AgentManager {
   private agents: Map<string, BaseAgent> = new Map();
   private taskQueue: AgentTask[] = [];
   private isProcessing: boolean = false;
+  private eventBus: EventBus;
 
-  constructor() {
-    super();
-    this.setupEventHandlers();
+  constructor(errorLogger: ErrorLogger, eventStorePath: string) {
+    this.eventBus = new EventBus(errorLogger, eventStorePath);
   }
 
-  private setupEventHandlers(): void {
-    this.on(EventType.TASK_COMPLETED, this.handleTaskCompletion.bind(this));
-    this.on(EventType.TASK_FAILED, this.handleTaskFailure.bind(this));
-    this.on(EventType.COLLABORATION_REQUESTED, this.handleCollaborationRequest.bind(this));
+  async initialize(): Promise<void> {
+    await this.eventBus.initialize();
+    await this.setupEventHandlers();
   }
 
-  registerAgent(agent: BaseAgent): void {
+  private async setupEventHandlers(): Promise<void> {
+    this.eventBus.subscribe({ type: EventType.TASK_COMPLETED }, this.handleTaskCompletion.bind(this));
+    this.eventBus.subscribe({ type: EventType.TASK_FAILED }, this.handleTaskFailure.bind(this));
+    this.eventBus.subscribe({ type: EventType.COLLABORATION_REQUESTED }, this.handleCollaborationRequest.bind(this));
+  }
+
+  async registerAgent(agent: BaseAgent): Promise<void> {
     const status = agent.getStatus();
     this.agents.set(status.id, agent);
-    
-    // Forward agent events to manager with proper typing
-    agent.on(EventType.TASK_STARTED, (event: TaskEvent) => this.emit(event.type, event));
-    agent.on(EventType.TASK_COMPLETED, (event: TaskEvent) => this.emit(event.type, event));
-    agent.on(EventType.TASK_FAILED, (event: TaskEvent) => this.emit(event.type, event));
-    agent.on(EventType.COLLABORATION_REQUESTED, (event: CollaborationEvent) => this.emit(event.type, event));
-    agent.on(EventType.STATE_CHANGED, (event: StateChangeEvent) => this.emit(event.type, event));
+    agent.setEventBus(this.eventBus);
 
-    // Emit agent registration event
-    const registrationEvent: AgentEvent = {
+    // Publish agent registration event
+    await this.eventBus.publish({
       id: generateUUID(),
       type: EventType.AGENT_REGISTERED,
       timestamp: Date.now(),
       source: this.constructor.name,
       agentId: status.id,
       role: status.role
-    };
-    this.emit(EventType.AGENT_REGISTERED, registrationEvent);
+    });
+
   }
 
   async submitTask(task: AgentTask): Promise<void> {
@@ -91,7 +91,7 @@ export class AgentManager extends EventEmitter {
         }
       }
     } catch (error) {
-      const errorEvent: ErrorEvent = {
+        const errorEvent: ErrorEvent = {
         id: generateUUID(),
         type: EventType.ERROR_OCCURRED,
         timestamp: Date.now(),
@@ -99,8 +99,8 @@ export class AgentManager extends EventEmitter {
         error: error as Error,
         context: { taskQueue: this.taskQueue },
         severity: 'high'
-      };
-      this.emit(EventType.ERROR_OCCURRED, errorEvent);
+        };
+        await this.eventBus.publish(errorEvent);
     } finally {
       this.isProcessing = false;
     }
@@ -193,6 +193,6 @@ export class AgentManager extends EventEmitter {
     }
     this.agents.clear();
     this.taskQueue = [];
-    this.removeAllListeners();
+
   }
 }
