@@ -1,4 +1,4 @@
-import { AgentContext } from '../types';
+import { AgentContext } from '../types/agent-types';
 
 export class ContextManager {
 	private contextStore: Map<string, AgentContext> = new Map();

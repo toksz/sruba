@@ -1,4 +1,10 @@
-import { EventType, TaskEvent, AgentEvent, CollaborationEvent, SrubaEvent } from './types';
+import { 
+	EventType, 
+	TaskEvent, 
+	AgentEvent, 
+	CollaborationEvent, 
+	SrubaEvent 
+} from './types/event-types';
 import { EventBus } from './events';
 
 export class EventHandlers {

@@ -1,7 +1,14 @@
-import { SrubaEvent, EventHandler, EventFilter, EventType } from '../types';
+import { 
+	SrubaEvent, 
+	EventType 
+} from '../types/event-types';
+import type { 
+	EventHandler, 
+	EventFilter 
+} from '../types/event-types';
 import { EventStore } from './event-store';
 import { EventValidator, EventValidationError } from './event-validator';
-import { ErrorLogger } from '../errors/error-logger';
+import { ErrorLogger } from '../errors';
 
 type TypedEventHandler<T extends SrubaEvent> = (event: T) => Promise<void>;
 

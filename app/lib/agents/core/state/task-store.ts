@@ -1,4 +1,4 @@
-import { AgentTask } from '../types';
+import { AgentTask } from '../types/base-types';
 
 export class TaskStore {
 	private tasks: Map<string, AgentTask> = new Map();

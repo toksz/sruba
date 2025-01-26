@@ -1,4 +1,4 @@
-import { SrubaEvent, EventType } from '../types';
+import { SrubaEvent, EventType } from '../types/event-types';
 import { EventPersistence } from './event-persistence';
 
 export interface StoredEvent extends SrubaEvent {

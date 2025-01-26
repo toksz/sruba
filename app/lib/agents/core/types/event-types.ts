@@ -1,7 +1,5 @@
-import { AgentId, AgentRole, BaseContext, TaskId } from './base-types';
-import { AgentContext, AgentTask } from './agent-types';
+import { AgentRole, AgentTask, AgentContext } from './base-types';
 
-// Event Types
 export enum EventType {
 	// Task Events
 	TASK_CREATED = 'task_created',
@@ -18,17 +16,23 @@ export enum EventType {
 	COLLABORATION_REQUESTED = 'collaboration_requested',
 	COLLABORATION_ACCEPTED = 'collaboration_accepted',
 	COLLABORATION_COMPLETED = 'collaboration_completed',
-	COLLABORATION_FAILED = 'collaboration_failed'
+	COLLABORATION_FAILED = 'collaboration_failed',
+	
+	// System Events
+	STATE_CHANGED = 'state_changed',
+	ERROR_OCCURRED = 'error_occurred',
+	SYSTEM_READY = 'system_ready',
+	SYSTEM_SHUTDOWN = 'system_shutdown'
 }
 
-// Base Event Interface
-export interface BaseEvent extends BaseContext {
+export interface BaseEvent {
 	id: string;
 	type: EventType;
-	source: AgentId;
+	timestamp: number;
+	source: string;
+	metadata?: Record<string, unknown>;
 }
 
-// Task Events
 export interface TaskEvent extends BaseEvent {
 	type: Extract<EventType, 
 		| EventType.TASK_CREATED 
@@ -37,21 +41,19 @@ export interface TaskEvent extends BaseEvent {
 		| EventType.TASK_FAILED
 	>;
 	task: AgentTask;
-	agentId?: AgentId;
+	agentId?: string;
 }
 
-// Agent Events
 export interface AgentEvent extends BaseEvent {
 	type: Extract<EventType, 
 		| EventType.AGENT_REGISTERED 
 		| EventType.AGENT_UNREGISTERED 
 		| EventType.AGENT_STATUS_CHANGED
 	>;
-	agentId: AgentId;
+	agentId: string;
 	role: AgentRole;
 }
 
-// Collaboration Events
 export interface CollaborationEvent extends BaseEvent {
 	type: Extract<EventType, 
 		| EventType.COLLABORATION_REQUESTED 
@@ -59,14 +61,46 @@ export interface CollaborationEvent extends BaseEvent {
 		| EventType.COLLABORATION_COMPLETED 
 		| EventType.COLLABORATION_FAILED
 	>;
-	requesterId: AgentId;
+	requesterId: string;
 	targetRole: AgentRole;
 	context: AgentContext;
 }
 
-// Union type for all possible events
-export type SrubaEvent = TaskEvent | AgentEvent | CollaborationEvent;
+export interface StateChangeEvent extends BaseEvent {
+	type: EventType.STATE_CHANGED;
+	entityId: string;
+	entityType: 'agent' | 'task' | 'system';
+	previousState: unknown;
+	newState: unknown;
+}
 
-// Event handlers
+export interface ErrorEvent extends BaseEvent {
+	type: EventType.ERROR_OCCURRED;
+	error: Error;
+	context: unknown;
+	severity: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export interface SystemEvent extends BaseEvent {
+	type: Extract<EventType, 
+		| EventType.SYSTEM_READY 
+		| EventType.SYSTEM_SHUTDOWN
+	>;
+	status: 'initializing' | 'ready' | 'shutting_down' | 'error';
+	activeAgents?: number;
+	pendingTasks?: number;
+}
+
+export type SrubaEvent = 
+	| TaskEvent 
+	| AgentEvent 
+	| CollaborationEvent 
+	| StateChangeEvent 
+	| ErrorEvent
+	| SystemEvent;
+
 export type EventHandler = (event: SrubaEvent) => Promise<void>;
 export type EventFilter = (event: SrubaEvent) => boolean;
+
+// Re-export base types used in events
+export { AgentRole, AgentTask, AgentContext };

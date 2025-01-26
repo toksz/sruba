@@ -8,7 +8,7 @@ import {
   ErrorEvent,
   AgentRole,
   AgentTask
-} from '../types';
+} from '../types/event-types';
 import { BaseAgent } from '../base-agent';
 import { AgentManager } from '../agent-manager';
 import { ErrorLogger } from '../errors';

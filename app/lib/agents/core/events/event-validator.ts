@@ -1,4 +1,4 @@
-import { SrubaEvent, EventType } from '../types';
+import { SrubaEvent, EventType } from '../types/event-types';
 import { AgentError, ErrorSeverity } from '../errors/error-types';
 
 export class EventValidationError extends AgentError {

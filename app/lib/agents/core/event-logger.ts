@@ -1,4 +1,4 @@
-import { SrubaEvent, EventType } from './types';
+import { SrubaEvent, EventType } from './types/event-types';
 import { EventBus } from './events';
 
 export class EventLogger {

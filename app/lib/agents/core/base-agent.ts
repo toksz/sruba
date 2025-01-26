@@ -8,7 +8,7 @@ import {
   AgentEvent,
   CollaborationEvent,
   StateChangeEvent
-} from './types';
+} from './types/event-types';
 import { EventBus } from './events';
 
 // Helper function for generating UUIDs
@@ -28,6 +28,10 @@ export abstract class BaseAgent {
   protected currentTask?: AgentTask;
   protected isAvailable: boolean = true;
   protected eventBus?: EventBus;
+  protected taskQueue: AgentTask[] = [];
+  protected collaborators: Map<AgentRole, string[]> = new Map();
+  protected taskHistory: AgentTask[] = [];
+  protected maxConcurrentTasks: number = 1;
 
   constructor(
     id: string,
@@ -114,7 +118,7 @@ export abstract class BaseAgent {
         agentId: this.id,
         metadata: { error }
       };
-      this.emit(EventType.TASK_FAILED, taskFailedEvent);
+        await this.emitEvent(taskFailedEvent);
       return false;
     } finally {
       this.isAvailable = true;
@@ -163,6 +167,45 @@ export abstract class BaseAgent {
   }
 
   // Collaboration methods
+  // Enhanced task management
+  async queueTask(task: AgentTask): Promise<void> {
+    this.taskQueue.push(task);
+    await this.processTaskQueue();
+  }
+
+  protected async processTaskQueue(): Promise<void> {
+    if (!this.isAvailable || this.taskQueue.length === 0) return;
+
+    const task = this.taskQueue[0];
+    const success = await this.assignTask(task);
+    
+    if (success) {
+      this.taskHistory.push({ ...task, status: 'completed' });
+    } else {
+      this.taskHistory.push({ ...task, status: 'failed' });
+    }
+    
+    this.taskQueue.shift();
+  }
+
+  // Enhanced collaboration
+  async registerCollaborator(role: AgentRole, agentId: string): Promise<void> {
+    if (!this.collaborators.has(role)) {
+      this.collaborators.set(role, []);
+    }
+    this.collaborators.get(role)?.push(agentId);
+    
+    await this.emitEvent({
+      id: generateUUID(),
+      type: EventType.COLLABORATION_ACCEPTED,
+      timestamp: Date.now(),
+      source: this.id,
+      requesterId: agentId,
+      targetRole: this.role,
+      context: this.context
+    });
+  }
+
   async requestCollaboration(
     targetRole: AgentRole,
     data: unknown
@@ -177,6 +220,45 @@ export abstract class BaseAgent {
       context: this.context
     };
     await this.emitEvent(collaborationEvent);
+  }
+
+  protected async delegateSubtask(subtask: AgentTask, targetRole: AgentRole): Promise<void> {
+    await this.requestCollaboration(targetRole, {
+      parentTask: this.currentTask,
+      subtask
+    });
+  }
+
+  // Performance monitoring
+  getPerformanceMetrics(): {
+    completedTasks: number;
+    failedTasks: number;
+    averageTaskTime: number;
+    collaborationCount: number;
+  } {
+    const completed = this.taskHistory.filter(t => t.status === 'completed').length;
+    const failed = this.taskHistory.filter(t => t.status === 'failed').length;
+    
+    return {
+      completedTasks: completed,
+      failedTasks: failed,
+      averageTaskTime: this.calculateAverageTaskTime(),
+      collaborationCount: Array.from(this.collaborators.values())
+        .reduce((acc, agents) => acc + agents.length, 0)
+    };
+  }
+
+  private calculateAverageTaskTime(): number {
+    const completedTasks = this.taskHistory.filter(t => t.status === 'completed');
+    if (completedTasks.length === 0) return 0;
+
+    const totalTime = completedTasks.reduce((acc, task) => {
+      const startTime = task.metadata?.startTime as number;
+      const endTime = task.metadata?.endTime as number;
+      return acc + (endTime - startTime);
+    }, 0);
+
+    return totalTime / completedTasks.length;
   }
 
   // Cleanup method to handle agent shutdown

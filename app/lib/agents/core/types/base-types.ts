@@ -18,17 +18,43 @@ export enum AgentStatus {
 	OFFLINE = 'offline'
 }
 
+// Agent capabilities
+export interface AgentCapability {
+	role: AgentRole;
+	confidence: number;
+	specialties: string[];
+}
+
 // Basic interfaces
 export interface BaseContext {
 	timestamp: number;
 	metadata?: Record<string, unknown>;
 }
 
-export interface BaseTask {
+export interface AgentTask {
 	id: TaskId;
+	role: AgentRole;
 	type: string;
-	status: TaskStatus;
-	metadata?: Record<string, unknown>;
+	priority: number;
+	description: string;
+	context: Record<string, unknown>;
+	dependencies: TaskId[];
+	status: 'pending' | 'in_progress' | 'completed' | 'failed';
+	assignedAgent?: AgentId;
 }
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export interface AgentContext extends BaseContext {
+	projectInfo: {
+		name: string;
+		description: string;
+		techStack: string[];
+		constraints: string[];
+	};
+	currentTask?: AgentTask;
+	recentActions: Array<{
+		timestamp: number;
+		action: string;
+		result: unknown;
+	}>;
+	sharedKnowledge: Map<string, unknown>;
+}

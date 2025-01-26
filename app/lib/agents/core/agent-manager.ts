@@ -1,6 +1,3 @@
-import { BaseAgent } from './base-agent';
-import { EventBus } from './events';
-import { ErrorLogger } from './errors';
 import { 
   AgentRole, 
   AgentTask, 
@@ -10,8 +7,29 @@ import {
   AgentEvent,
   CollaborationEvent,
   StateChangeEvent,
-  ErrorEvent
-} from './types';
+  ErrorEvent 
+} from './types/event-types';
+import { BaseAgent } from './base-agent';
+import { EventBus } from './events';
+import { ErrorLogger } from './errors';
+
+// Helper class for priority queue
+class PriorityQueue<T> {
+  private items: { item: T; priority: number }[] = [];
+
+  enqueue(item: T, priority: number): void {
+    this.items.push({ item, priority });
+    this.items.sort((a, b) => b.priority - a.priority);
+  }
+
+  dequeue(): T | undefined {
+    return this.items.shift()?.item;
+  }
+
+  get length(): number {
+    return this.items.length;
+  }
+}
 
 // Helper function for generating UUIDs
 function generateUUID(): string {
@@ -24,9 +42,22 @@ function generateUUID(): string {
 
 export class AgentManager {
   private agents: Map<string, BaseAgent> = new Map();
-  private taskQueue: AgentTask[] = [];
+  private taskQueue: PriorityQueue<AgentTask> = new PriorityQueue();
   private isProcessing: boolean = false;
   private eventBus: EventBus;
+  private metrics: {
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    averageProcessingTime: number;
+    collaborationCount: number;
+  } = {
+    totalTasks: 0,
+    completedTasks: 0,
+    failedTasks: 0,
+    averageProcessingTime: 0,
+    collaborationCount: 0
+  };
 
   constructor(errorLogger: ErrorLogger, eventStorePath: string) {
     this.eventBus = new EventBus(errorLogger, eventStorePath);
@@ -61,10 +92,27 @@ export class AgentManager {
   }
 
   async submitTask(task: AgentTask): Promise<void> {
-    this.taskQueue.push(task);
+    this.metrics.totalTasks++;
+    this.taskQueue.enqueue(task, this.calculateTaskPriority(task));
     if (!this.isProcessing) {
       await this.processTasks();
     }
+  }
+
+  private calculateTaskPriority(task: AgentTask): number {
+    let priority = task.priority;
+    
+    // Increase priority for critical tasks
+    if (task.metadata?.critical) priority += 10;
+    
+    // Increase priority for tasks with dependencies
+    if (task.dependencies.length > 0) priority += 5;
+    
+    // Decrease priority for tasks that have failed before
+    const failCount = task.metadata?.failCount || 0;
+    priority -= failCount * 2;
+    
+    return priority;
   }
 
   private async processTasks(): Promise<void> {
@@ -112,26 +160,64 @@ export class AgentManager {
   }
 
   private async findBestAgent(task: AgentTask): Promise<BaseAgent | null> {
-    let bestAgent: BaseAgent | null = null;
-    let highestConfidence = 0;
+    const candidates = Array.from(this.agents.values())
+      .filter(agent => {
+        const status = agent.getStatus();
+        return status.available && agent.hasCapability(task.role);
+      })
+      .map(agent => ({
+        agent,
+        score: this.calculateAgentScore(agent, task)
+      }))
+      .sort((a, b) => b.score - a.score);
 
-    for (const agent of this.agents.values()) {
+    return candidates[0]?.agent || null;
+  }
+
+  private calculateAgentScore(agent: BaseAgent, task: AgentTask): number {
+    const metrics = agent.getPerformanceMetrics();
+    const status = agent.getStatus();
+    
+    let score = agent.hasCapability(task.role, 0) ? 100 : 0;
+    
+    // Adjust score based on agent's performance
+    score += (metrics.completedTasks / (metrics.completedTasks + metrics.failedTasks)) * 20;
+    score -= metrics.averageTaskTime / 1000; // Penalize slower agents
+    
+    // Prefer agents with relevant experience
+    if (status.currentTask?.type === task.type) score += 10;
+    
+    return score;
+  }
+
+  async getSystemMetrics(): Promise<{
+    agentMetrics: Map<string, any>;
+    systemMetrics: typeof this.metrics;
+    taskDistribution: Map<AgentRole, number>;
+  }> {
+    const agentMetrics = new Map();
+    const taskDistribution = new Map<AgentRole, number>();
+    
+    for (const [id, agent] of this.agents) {
+      const metrics = agent.getPerformanceMetrics();
+      agentMetrics.set(id, metrics);
+      
       const status = agent.getStatus();
-      if (!status.available) continue;
-
-      if (agent.hasCapability(task.role)) {
-        const confidence = agent.hasCapability(task.role, 0) ? 1 : 0;
-        if (confidence > highestConfidence) {
-          highestConfidence = confidence;
-          bestAgent = agent;
-        }
-      }
+      const count = taskDistribution.get(status.role) || 0;
+      taskDistribution.set(status.role, count + 1);
     }
-
-    return bestAgent;
+    
+    return {
+      agentMetrics,
+      systemMetrics: { ...this.metrics },
+      taskDistribution
+    };
   }
 
   private async handleTaskCompletion(event: TaskEvent): Promise<void> {
+    this.metrics.completedTasks++;
+    this.updateMetrics(event);
+    
     // Update shared context
     const sharedContext: Partial<AgentContext> = {
       recentActions: [{
@@ -148,8 +234,25 @@ export class AgentManager {
   }
 
   private async handleTaskFailure(event: TaskEvent): Promise<void> {
-    // Implement recovery or retry logic
-    console.error('Task failed:', event);
+    this.metrics.failedTasks++;
+    this.updateMetrics(event);
+    
+    // Enhanced recovery logic
+    const task = event.task;
+    const failCount = (task.metadata?.failCount || 0) + 1;
+    
+    if (failCount < 3) {
+      // Retry with modified task
+      const retryTask = {
+        ...task,
+        metadata: {
+          ...task.metadata,
+          failCount,
+          lastError: event.metadata?.error
+        }
+      };
+      await this.submitTask(retryTask);
+    }
     
     // Notify other agents of failure
     const sharedContext: Partial<AgentContext> = {
@@ -164,6 +267,16 @@ export class AgentManager {
     for (const agent of this.agents.values()) {
       agent.updateContext(sharedContext);
     }
+  }
+
+  private updateMetrics(event: TaskEvent): void {
+    const startTime = event.task.metadata?.startTime as number;
+    const endTime = Date.now();
+    const processingTime = endTime - startTime;
+    
+    this.metrics.averageProcessingTime = 
+      (this.metrics.averageProcessingTime * (this.metrics.completedTasks - 1) + processingTime) 
+      / this.metrics.completedTasks;
   }
 
   private async handleCollaborationRequest(event: CollaborationEvent): Promise<void> {
