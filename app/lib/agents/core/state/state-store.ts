@@ -1,5 +1,7 @@
-import { AgentState, AgentId } from '../types/agent-types';
-import { AgentRole, AgentStatus } from '../types';
+import { AgentState } from '../types/agent-types';
+import { AgentId, AgentRole, AgentStatus } from '../types/base-types';
+
+
 
 export class StateStore {
 	private states: Map<AgentId, AgentState> = new Map();

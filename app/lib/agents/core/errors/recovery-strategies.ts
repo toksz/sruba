@@ -23,10 +23,10 @@ export interface RecoveryResult {
 	}[];
 }
 
-export class RecoveryStrategy {
+export class StepBasedRecoveryStrategy {
 	constructor(
 		private steps: RecoveryStep[],
-		private fallback?: RecoveryStrategy
+		private fallback?: StepBasedRecoveryStrategy
 	) {}
 
 	async execute(): Promise<RecoveryResult> {

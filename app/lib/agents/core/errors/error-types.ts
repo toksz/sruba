@@ -1,4 +1,4 @@
-import { AgentId, TaskId } from '../types/agent-types';
+import { AgentId, TaskId } from '../types/base-types';
 
 export enum ErrorSeverity {
 	LOW = 'low',
@@ -18,6 +18,7 @@ export class AgentError extends Error {
 	readonly severity: ErrorSeverity;
 	readonly recoverable: boolean;
 	readonly context: ErrorContext;
+	readonly recoveryAttempts: number;
 
 	constructor(
 		message: string,
@@ -32,6 +33,7 @@ export class AgentError extends Error {
 		this.severity = severity;
 		this.recoverable = recoverable;
 		this.context = context;
+		this.recoveryAttempts = 0;
 	}
 }
 

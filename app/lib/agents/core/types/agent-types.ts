@@ -48,5 +48,5 @@ export interface AgentState {
 	readonly context: AgentContext;
 	readonly memory: AgentMemory;
 }
-export type { AgentId, TaskId, AgentRole, AgentStatus, AgentTask, AgentMemory, MemoryItem, AgentState, AgentContext };
+
 
