@@ -1,0 +1,15 @@
+{
+	"version": "1.0.0",
+	"lastUpdated": "2024-01-26",
+	"categories": {
+		"system": { "path": "memory/system", "priority": 1 },
+		"user": { "path": "memory/user", "priority": 2 },
+		"state": { "path": "memory/state", "priority": 3 },
+		"learning": { "path": "memory/learning", "priority": 4 }
+	},
+	"patterns": {
+		"agent": { "path": "patterns/agent.md", "dependencies": [] },
+		"error": { "path": "patterns/error.md", "dependencies": [] },
+		"state": { "path": "patterns/state.md", "dependencies": [] }
+	}
+}

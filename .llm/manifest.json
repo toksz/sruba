@@ -1,0 +1,25 @@
+{
+	"files": {
+		"patterns/agent.md": {
+			"checksum": "",
+			"lastModified": "2024-01-26",
+			"dependencies": []
+		},
+		"patterns/error.md": {
+			"checksum": "",
+			"lastModified": "2024-01-26",
+			"dependencies": []
+		},
+		"patterns/state.md": {
+			"checksum": "",
+			"lastModified": "2024-01-26",
+			"dependencies": []
+		}
+	},
+	"directories": {
+		"memory/system": { "type": "core", "required": true },
+		"memory/user": { "type": "preferences", "required": true },
+		"memory/state": { "type": "dynamic", "required": true },
+		"memory/learning": { "type": "knowledge", "required": true }
+	}
+}
