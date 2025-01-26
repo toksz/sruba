@@ -1,8 +1,10 @@
 import { BaseAgent } from '../base-agent';
 import { AgentRole, AgentTask, AgentContext } from '../types/base-types';
-import { EventType, TaskEvent } from '../types/event-types';
+import { EventType } from '../types/event-types';
+import { ProviderAdapter } from '../llm/provider-adapter';
 
-interface ArchitectureDecision {
+
+export interface ArchitectureDecision {
 	area: string;
 	decision: string;
 	rationale: string;
@@ -10,7 +12,7 @@ interface ArchitectureDecision {
 	consequences: string[];
 }
 
-interface SystemComponent {
+export interface SystemComponent {
 	name: string;
 	purpose: string;
 	dependencies: string[];
@@ -21,6 +23,7 @@ interface SystemComponent {
 export class ArchitectAgent extends BaseAgent {
 	private decisions: Map<string, ArchitectureDecision> = new Map();
 	private components: Map<string, SystemComponent> = new Map();
+	private providerAdapter: ProviderAdapter;
 
 	constructor(id: string, initialContext: AgentContext) {
 		super(
@@ -29,21 +32,38 @@ export class ArchitectAgent extends BaseAgent {
 			[{ role: AgentRole.ARCHITECT, confidence: 1, specialties: ['system_design', 'architecture_review'] }],
 			initialContext
 		);
+		this.providerAdapter = ProviderAdapter.getInstance();
+
 	}
 
 	async analyzeTask(task: AgentTask): Promise<boolean> {
-		// Check if task type matches architect capabilities
 		return ['system_design', 'architecture_review', 'tech_decision'].includes(task.type);
 	}
 
 	async executeTask(task: AgentTask): Promise<unknown> {
+		const response = await this.providerAdapter.generateResponse({
+			role: AgentRole.ARCHITECT,
+			task: task.type,
+			context: {
+				task: task,
+				currentDecisions: Array.from(this.decisions.values()),
+				currentComponents: Array.from(this.components.values()),
+				context: this.context
+			}
+		}, {
+			preferredProvider: 'Anthropic', // Prefer Claude for complex reasoning
+			model: 'claude-3-opus-latest'
+		});
+
+
+		// Parse and process the response based on task type
 		switch (task.type) {
 			case 'system_design':
-				return this.handleSystemDesign(task);
+				return this.handleSystemDesign(task, response);
 			case 'architecture_review':
-				return this.handleArchitectureReview(task);
+				return this.handleArchitectureReview(task, response);
 			case 'tech_decision':
-				return this.handleTechDecision(task);
+				return this.handleTechDecision(task, response);
 			default:
 				throw new Error(`Unsupported task type: ${task.type}`);
 		}

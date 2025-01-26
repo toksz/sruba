@@ -1,8 +1,10 @@
 import { BaseAgent } from '../base-agent';
 import { AgentRole, AgentTask, AgentContext } from '../types/base-types';
-import { EventType, TaskEvent } from '../types/event-types';
+import { EventType } from '../types/event-types';
+import { ProviderAdapter } from '../llm/provider-adapter';
 
-interface CodeImplementation {
+
+export interface CodeImplementation {
 	filePath: string;
 	content: string;
 	tests?: string;
@@ -10,7 +12,7 @@ interface CodeImplementation {
 	documentation: string;
 }
 
-interface CodeReview {
+export interface CodeReview {
 	approved: boolean;
 	comments: Array<{
 		file: string;
@@ -29,6 +31,7 @@ interface CodeReview {
 export class CoderAgent extends BaseAgent {
 	private implementations: Map<string, CodeImplementation> = new Map();
 	private reviews: Map<string, CodeReview> = new Map();
+	private llmProvider: BaseLLMAgentProvider;
 
 	constructor(id: string, initialContext: AgentContext) {
 		super(
@@ -41,7 +44,11 @@ export class CoderAgent extends BaseAgent {
 			}],
 			initialContext
 		);
-	}
+
+		// Get the LLM provider (preferring Anthropic if available)
+		const llmManager = LLMManager.getInstance();
+		this.llmProvider = llmManager.getProvider('Anthropic') as BaseLLMAgentProvider || 
+						  llmManager.getDefaultProvider() as BaseLLMAgentProvider;
 
 	async analyzeTask(task: AgentTask): Promise<boolean> {
 		return ['implementation', 'refactor', 'bug_fix', 'optimization'].includes(task.type);

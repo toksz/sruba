@@ -1,8 +1,9 @@
 import { BaseAgent } from '../base-agent';
 import { AgentRole, AgentTask, AgentContext } from '../types/base-types';
-import { EventType, TaskEvent } from '../types/event-types';
+import { EventType } from '../types/event-types';
+import { ProviderAdapter } from '../llm/provider-adapter';
 
-interface ReviewResult {
+export interface ReviewResult {
 	status: 'approved' | 'changes_requested' | 'rejected';
 	comments: Array<{
 		file: string;
@@ -28,6 +29,7 @@ export class ReviewerAgent extends BaseAgent {
 		maxComplexity: number;
 		minMaintainability: number;
 	};
+	private providerAdapter: ProviderAdapter;
 
 	constructor(id: string, initialContext: AgentContext) {
 		super(
@@ -42,6 +44,7 @@ export class ReviewerAgent extends BaseAgent {
 		);
 
 		this.qualityThresholds = this.initializeThresholds();
+		this.providerAdapter = ProviderAdapter.getInstance();
 	}
 
 	async analyzeTask(task: AgentTask): Promise<boolean> {
@@ -49,13 +52,27 @@ export class ReviewerAgent extends BaseAgent {
 	}
 
 	async executeTask(task: AgentTask): Promise<unknown> {
+		const response = await this.providerAdapter.generateResponse({
+			role: AgentRole.REVIEWER,
+			task: task.type,
+			context: {
+				task: task,
+				currentReviews: Array.from(this.reviews.values()),
+				qualityThresholds: this.qualityThresholds,
+				context: this.context
+			}
+		}, {
+			preferredProvider: 'Anthropic',
+			model: 'claude-3-opus-latest'
+		});
+
 		switch (task.type) {
 			case 'code_review':
-				return this.handleCodeReview(task);
+				return this.handleCodeReview(task, response);
 			case 'design_review':
-				return this.handleDesignReview(task);
+				return this.handleDesignReview(task, response);
 			case 'security_audit':
-				return this.handleSecurityAudit(task);
+				return this.handleSecurityAudit(task, response);
 			default:
 				throw new Error(`Unsupported task type: ${task.type}`);
 		}
@@ -66,7 +83,7 @@ export class ReviewerAgent extends BaseAgent {
 		return this.validateReviewOutput(result);
 	}
 
-	private async handleCodeReview(task: AgentTask): Promise<ReviewResult> {
+	private async handleCodeReview(task: AgentTask, response: string): Promise<ReviewResult> {
 		// Collaborate with Coder for context
 		await this.requestCollaboration(AgentRole.CODER, {
 			type: 'implementation',
@@ -97,19 +114,76 @@ export class ReviewerAgent extends BaseAgent {
 		return review;
 	}
 
-	private async performCodeReview(task: AgentTask): Promise<ReviewResult> {
-		// Implementation would perform actual code review
-		return {
-			status: 'changes_requested',
-			comments: [],
-			metrics: {
-				quality: 0,
-				coverage: 0,
-				complexity: 0,
-				maintainability: 0
-			},
-			recommendations: []
-		};
+	private async handleDesignReview(task: AgentTask, response: string): Promise<ReviewResult> {
+		// Collaborate with Architect for context
+		await this.requestCollaboration(AgentRole.ARCHITECT, {
+			type: 'system_design',
+			component: task.context.component
+		});
+
+		const review = this.parseReviewResponse(response);
+		this.reviews.set(task.id, review);
+
+		return review;
+	}
+
+	private async handleSecurityAudit(task: AgentTask, response: string): Promise<ReviewResult> {
+		const review = this.parseReviewResponse(response);
+		this.reviews.set(task.id, review);
+
+		if (review.status === 'rejected') {
+			await this.delegateSubtask(
+				{
+					id: crypto.randomUUID(),
+					type: 'security_fix',
+					role: AgentRole.CODER,
+					priority: task.priority + 1, // Higher priority for security issues
+					description: 'Fix security vulnerabilities found in audit',
+					dependencies: [task.id],
+					status: 'pending',
+					context: {
+						review: review
+					}
+				},
+				AgentRole.CODER
+			);
+		}
+
+		return review;
+	}
+
+	private parseReviewResponse(response: string): ReviewResult {
+		try {
+			const parsedResponse = JSON.parse(response);
+			return {
+				status: parsedResponse.status || 'changes_requested',
+				comments: parsedResponse.comments || [],
+				metrics: {
+					quality: parsedResponse.metrics?.quality || 0,
+					coverage: parsedResponse.metrics?.coverage || 0,
+					complexity: parsedResponse.metrics?.complexity || 0,
+					maintainability: parsedResponse.metrics?.maintainability || 0
+				},
+				recommendations: parsedResponse.recommendations || []
+			};
+		} catch (error) {
+			return {
+				status: 'changes_requested',
+				comments: [{
+					file: 'response',
+					severity: 'error',
+					message: 'Failed to parse LLM response',
+					suggestion: 'Review response format'
+				}],
+				metrics: {
+					quality: 0,
+					coverage: 0,
+					complexity: 0,
+					maintainability: 0
+				},
+				recommendations: ['Review and fix response parsing']
+			};
+		}
 	}
 
 	private validateReviewOutput(review: ReviewResult): boolean {
